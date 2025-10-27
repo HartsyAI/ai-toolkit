@@ -83,41 +83,41 @@ class FLiteModelHandler:
 
 def load_t5_xxl_with_layer_extraction(
     model_path: str,
-    layer: int = 17,
+    layer: int = -8,
     device: torch.device = None,
     dtype: torch.dtype = torch.bfloat16
 ) -> torch.nn.Module:
     """
-    Load T5 XXL text encoder with specific layer extraction.
+    Load T5 XXL text encoder for F-Lite.
 
-    F-Lite uses layer 17 of T5 XXL for text embeddings instead of the final layer.
-    This function loads the model and configures it for layer extraction.
+    F-Lite uses layer -8 (8th from end) of T5 XXL for text embeddings with
+    layer normalization and dropout applied after extraction.
+
+    The actual layer extraction happens in train_tools.encode_prompts_flite(),
+    which properly extracts hidden_states[return_index] and applies layer norm/dropout.
 
     Args:
         model_path: Path or HuggingFace ID for the T5 model
-        layer: Which layer to extract (default: 17 for F-Lite)
+        layer: Which layer to extract (default: -8 for F-Lite). This is for info only.
         device: Target device
         dtype: Data type for the model
 
     Returns:
-        Configured T5 model with extract_layer attribute
+        Loaded T5 encoder model
     """
     from transformers import T5EncoderModel
 
-    print(f"Loading T5 XXL with layer {layer} extraction...")
+    print(f"Loading T5 XXL (F-Lite uses layer {layer} extraction)...")
 
     text_encoder = T5EncoderModel.from_pretrained(
         model_path,
         torch_dtype=dtype,
     )
 
-    # Add custom attribute for layer extraction
-    text_encoder.extract_layer = layer
-
     if device is not None:
         text_encoder.to(device)
 
-    print(f"✓ T5 XXL loaded (extracting layer {layer})")
+    print(f"✓ T5 XXL loaded (layer {layer} will be extracted during encoding)")
     return text_encoder
 
 
@@ -269,9 +269,10 @@ def setup_flite_for_training(
     if low_vram:
         print("⚠ Low VRAM mode enabled")
 
-    # Get layer extraction setting (default 17 for F-Lite)
-    extract_layer = getattr(model_config, 'flite_text_encoder_layer', 17)
-    print(f"T5 layer extraction: {extract_layer}")
+    # Get layer extraction setting (default -8 for F-Lite)
+    # Note: -8 means 8th layer from the end (not layer 17)
+    extract_layer = getattr(model_config, 'flite_text_encoder_layer', -8)
+    print(f"T5 layer extraction: {extract_layer} (8th from end)")
 
     # Register F-Lite classes
     handler = FLiteModelHandler()
@@ -319,7 +320,7 @@ def setup_flite_for_training(
     print("Component Summary")
     print("-" * 60)
     print(f"✓ Tokenizer: T5")
-    print(f"✓ Text Encoder: T5 XXL (layer {extract_layer})")
+    print(f"✓ Text Encoder: T5 XXL (layer {extract_layer} = 8th from end)")
     print(f"✓ VAE: Flux Schnell")
     print(f"✓ Transformer: F-Lite DiT (10B)")
     print(f"✓ Dtype: {dtype}")
@@ -385,7 +386,7 @@ FLITE_MODEL_INFO = {
     'parameters': '10B',
     'architecture': 'Diffusion Transformer (DiT)',
     'text_encoder': 'T5 XXL',
-    'text_encoder_extraction': 'Layer 17',
+    'text_encoder_extraction': 'Layer -8 (8th from end) with layer norm/dropout',
     'vae': 'Flux Schnell VAE',
     'training_paradigm': 'Flow Matching',
     'license': 'Copyright-safe (trained on licensed data)',
@@ -399,7 +400,7 @@ FLITE_MODEL_INFO = {
     },
     'notes': [
         'F-Lite is trained on licensed data only (Freepik library)',
-        'Layer 17 extraction from T5 provides optimal text understanding',
+        'Layer -8 (8th from end) extraction from T5 with layer norm and dropout',
         'Quantization recommended for 24GB VRAM systems',
         'Flow matching scheduler required for training',
         'Lower guidance scales (3-6) work better than SD (7-10)',

@@ -573,6 +573,77 @@ def encode_prompts_flux(
     return prompt_embeds, pooled_prompt_embeds
 
 
+def encode_prompts_flite(
+        tokenizer: 'T5Tokenizer',
+        text_encoder: 'T5EncoderModel',
+        prompts: list[str],
+        truncate: bool = True,
+        max_length: int = 512,
+        dropout_prob: float = 0.0,
+        return_index: int = -8,
+):
+    """
+    Encode prompts for F-Lite model using T5 encoder with layer extraction.
+
+    F-Lite uses layer -8 (8th from end) of T5 XXL encoder, with layer norm and dropout.
+    This matches the official F-Lite implementation.
+
+    Args:
+        tokenizer: T5 tokenizer
+        text_encoder: T5 encoder model
+        prompts: List of prompt strings
+        truncate: Whether to truncate to max_length
+        max_length: Maximum sequence length (default 512)
+        dropout_prob: Probability of dropping caption entirely
+        return_index: Which hidden state layer to extract (default -8)
+
+    Returns:
+        Tuple of (prompt_embeds, None) to match other encode functions
+    """
+    if dropout_prob > 0.0:
+        # Randomly drop out prompts (caption dropout)
+        prompts = [
+            prompt if torch.rand(1).item() > dropout_prob else "" for prompt in prompts
+        ]
+
+    device = text_encoder.device
+    dtype = text_encoder.dtype
+
+    # Tokenize
+    text_inputs = tokenizer(
+        prompts,
+        padding="max_length",
+        max_length=max_length,
+        truncation=True,
+        return_length=False,
+        return_overflowing_tokens=False,
+        return_tensors="pt",
+    )
+    text_input_ids = text_inputs.input_ids.to(device)
+
+    # Encode with hidden states
+    text_encoder_output = text_encoder(
+        text_input_ids,
+        output_hidden_states=True,
+        return_dict=True
+    )
+
+    # Extract specific layer (default -8 for F-Lite)
+    prompt_embeds = text_encoder_output.hidden_states[return_index]
+
+    # Apply layer norm and dropout if not using final layer
+    # This matches official F-Lite implementation
+    if return_index != -1:
+        prompt_embeds = text_encoder.encoder.final_layer_norm(prompt_embeds)
+        prompt_embeds = text_encoder.encoder.dropout(prompt_embeds)
+
+    # Cast to correct dtype
+    prompt_embeds = prompt_embeds.to(dtype=dtype, device=device)
+
+    # F-Lite doesn't use pooled embeds, return None for compatibility
+    return prompt_embeds, None
+
+
 # for XL
 def get_add_time_ids(
         height: int,

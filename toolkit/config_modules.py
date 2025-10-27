@@ -567,7 +567,8 @@ class ModelConfig:
 
         # F-Lite configuration
         self.is_flite: bool = kwargs.get('is_flite', False)
-        self.flite_text_encoder_layer: int = kwargs.get('flite_text_encoder_layer', 17)
+        # F-Lite uses layer -8 (8th from end) with layer norm and dropout
+        self.flite_text_encoder_layer: int = kwargs.get('flite_text_encoder_layer', -8)
 
         self.is_lumina2: bool = kwargs.get('is_lumina2', False)
         if self.is_pixart_sigma:

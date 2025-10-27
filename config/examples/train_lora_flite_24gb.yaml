@@ -102,7 +102,8 @@ config:
         # qtype: qfloat8              # Quantization type (default is good)
 
         # F-Lite specific: T5 layer extraction
-        flite_text_encoder_layer: 17  # Layer 17 extraction (DO NOT CHANGE unless experimenting)
+        # Use -8 for layer extraction (8th layer from the end, matching official implementation)
+        flite_text_encoder_layer: -8  # Default -8 (DO NOT CHANGE unless experimenting)
 
         # Low VRAM mode (enable if you have <24GB VRAM)
         # low_vram: true              # Uncomment for 20GB VRAM systems
@@ -142,7 +143,7 @@ meta:
 
     Key Features:
     - Flow matching training (like FLUX.1)
-    - T5 XXL text encoder (layer 17 extraction)
+    - T5 XXL text encoder (layer -8 extraction with layer norm/dropout)
     - Flux Schnell VAE
     - 10B parameter DiT transformer
 

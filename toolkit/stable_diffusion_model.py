@@ -2523,6 +2523,22 @@ class StableDiffusion:
             pe.pooled_embeds = pooled_prompt_embeds
             return pe
 
+        elif self.is_flite:
+            # F-Lite uses T5 XXL with layer -8 extraction (8th from end)
+            # Get return_index from config, default to -8
+            return_index = getattr(self.model_config, 'flite_text_encoder_layer', -8)
+
+            prompt_embeds, _ = train_tools.encode_prompts_flite(
+                self.tokenizer,
+                self.text_encoder,
+                prompt,
+                truncate=not long_prompts,
+                max_length=512,  # F-Lite uses 512 max length like FLUX
+                dropout_prob=dropout_prob,
+                return_index=return_index
+            )
+            return PromptEmbeds(prompt_embeds)
+
         elif self.is_lumina2:
             (
                 prompt_embeds,
