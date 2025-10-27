@@ -549,7 +549,7 @@ class TrainConfig:
         self.switch_boundary_every: int = kwargs.get('switch_boundary_every', 1)
 
 
-ModelArch = Literal['sd1', 'sd2', 'sd3', 'sdxl', 'pixart', 'pixart_sigma', 'auraflow', 'flux', 'flex1', 'flex2', 'lumina2', 'vega', 'ssd', 'wan21']
+ModelArch = Literal['sd1', 'sd2', 'sd3', 'sdxl', 'pixart', 'pixart_sigma', 'auraflow', 'flux', 'flite', 'flex1', 'flex2', 'lumina2', 'vega', 'ssd', 'wan21']
 
 
 class ModelConfig:
@@ -564,6 +564,11 @@ class ModelConfig:
         self.is_auraflow: bool = kwargs.get('is_auraflow', False)
         self.is_v3: bool = kwargs.get('is_v3', False)
         self.is_flux: bool = kwargs.get('is_flux', False)
+
+        # F-Lite configuration
+        self.is_flite: bool = kwargs.get('is_flite', False)
+        self.flite_text_encoder_layer: int = kwargs.get('flite_text_encoder_layer', 17)
+
         self.is_lumina2: bool = kwargs.get('is_lumina2', False)
         if self.is_pixart_sigma:
             self.is_pixart = True
@@ -691,6 +696,8 @@ class ModelConfig:
                 self.is_auraflow = True
             elif self.arch == 'flux':
                 self.is_flux = True
+            elif self.arch == 'flite':
+                self.is_flite = True
             elif self.arch == 'lumina2':
                 self.is_lumina2 = True
             elif self.arch == 'vega':
@@ -714,6 +721,8 @@ class ModelConfig:
                 self.arch = 'auraflow'
             elif kwargs.get('is_flux', False):
                 self.arch = 'flux'
+            elif kwargs.get('is_flite', False):
+                self.arch = 'flite'
             elif kwargs.get('is_lumina2', False):
                 self.arch = 'lumina2'
             elif kwargs.get('is_vega', False):
@@ -722,7 +731,15 @@ class ModelConfig:
                 self.arch = 'ssd'
             else:
                 self.arch = 'sd1'
-        
+
+        # F-Lite defaults
+        if self.is_flite:
+            # Enable quantization by default for 24GB VRAM compatibility
+            if not self.quantize and not hasattr(self, '_quantize_set'):
+                self.quantize = True
+            # F-Lite uses flow matching like FLUX
+            # Note: use_flowmatch is set in TrainConfig, not ModelConfig
+            # The validation will handle setting it properly
 
 
 class EMAConfig:
@@ -1301,6 +1318,28 @@ def validate_configs(
         if model_config.use_flux_cfg:
             # bypass the embedding
             train_config.bypass_guidance_embedding = True
+
+    # F-Lite validation
+    if model_config.is_flite:
+        print("Validating F-Lite configuration...")
+
+        # F-Lite requires diffusers save format
+        if save_config.save_format != 'diffusers':
+            save_config.save_format = 'diffusers'
+            print("  → F-Lite requires diffusers save format, automatically set.")
+
+        # F-Lite uses flow matching like FLUX
+        if train_config.noise_scheduler != 'flowmatch':
+            train_config.noise_scheduler = 'flowmatch'
+            print("  → F-Lite uses flow matching scheduler, automatically set.")
+
+        # Recommend quantization for memory efficiency
+        if not model_config.quantize:
+            print("  → WARNING: Quantization disabled. F-Lite may require >24GB VRAM without quantization.")
+            print("  → Consider enabling: quantize: true")
+
+        print("F-Lite configuration validated.")
+
     if train_config.bypass_guidance_embedding and train_config.do_guidance_loss:
         raise ValueError("Cannot bypass guidance embedding and do guidance loss at the same time. "
                          "Please set bypass_guidance_embedding to False or do_guidance_loss to False.")

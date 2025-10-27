@@ -1,0 +1,169 @@
+# F-Lite LoRA Training Configuration
+# Optimized for 24GB VRAM GPUs (RTX 3090, RTX 4090, etc.)
+# For copyright-safe image generation model training
+
+job: extension
+config:
+  name: "flite_lora_training"
+
+  process:
+    - type: 'sd_trainer'
+      training_folder: "output"
+
+      # GPU Configuration
+      device: cuda:0
+
+      # Optional: Trigger word for your LoRA concept
+      # Uncomment and set if you want a specific trigger word
+      # trigger_word: "TOK"
+
+      # Network Configuration - LoRA settings
+      network:
+        type: "lora"
+        linear: 16              # LoRA rank - increase to 32-64 for complex concepts
+        linear_alpha: 16        # Keep same as rank typically
+
+      # Save Configuration
+      save:
+        dtype: float16          # Save precision
+        save_every: 250         # Save checkpoint every N steps
+        max_step_saves_to_keep: 4
+        save_format: diffusers  # Required for F-Lite
+        push_to_hub: false      # Set true to push to HuggingFace Hub
+        # hf_repo_id: "your-username/your-lora-name"  # Uncomment if push_to_hub: true
+
+      # Dataset Configuration
+      datasets:
+        # Path to your training images
+        - folder_path: "/path/to/your/training/images"
+
+          # Caption file extension (.txt files with same name as images)
+          caption_ext: "txt"
+
+          # Caption settings
+          caption_dropout_rate: 0.05  # 5% chance to drop caption (helps generalization)
+          shuffle_tokens: false       # F-Lite works best with natural sentences
+
+          # Performance optimization
+          cache_latents_to_disk: true  # Cache VAE encodings to save memory
+          cache_latents: true
+
+          # Resolution settings
+          # F-Lite supports flexible resolutions above 1MP
+          resolution: [512, 768, 1024]  # Multiple resolutions for aspect ratio buckets
+
+          # Optional: Limit dataset size for testing
+          # n_repeats: 10  # Repeat small datasets
+
+      # Training Configuration
+      train:
+        # Batch settings
+        batch_size: 1                    # Start with 1 for 24GB VRAM
+        steps: 2000                      # Total training steps (1500-3000 typical)
+        gradient_accumulation_steps: 1   # Increase if you need larger effective batch
+
+        # What to train
+        train_unet: true              # Train the DiT transformer (the main model)
+        train_text_encoder: false     # Keep T5 XXL frozen (recommended)
+
+        # Memory optimization
+        gradient_checkpointing: true  # Trade compute for memory
+
+        # Noise scheduler - CRITICAL for F-Lite
+        noise_scheduler: flowmatch    # F-Lite uses flow matching (like FLUX)
+
+        # Optimizer settings
+        optimizer: adamw8bit          # Memory-efficient optimizer
+        lr: 0.0001                    # Learning rate (1e-4, can try 5e-5 to 2e-4)
+
+        # Learning rate schedule
+        lr_scheduler: "constant"      # Options: constant, cosine, linear
+        # lr_warmup_steps: 100        # Uncomment for warmup
+
+        # EMA (Exponential Moving Average) for smoother learning
+        ema_config:
+          use_ema: true
+          ema_decay: 0.99
+
+        # Dtype - F-Lite works best with bfloat16
+        dtype: bf16                   # Use bf16 if your GPU supports it (RTX 30xx+)
+        # dtype: fp16                 # Use fp16 for older GPUs
+
+      # Model Configuration - CRITICAL SECTION
+      model:
+        # HuggingFace model path
+        name_or_path: "Freepik/F-Lite"
+
+        # CRITICAL: Set this flag to enable F-Lite
+        is_flite: true
+
+        # Quantization (HIGHLY RECOMMENDED for 24GB VRAM)
+        quantize: true                # Reduces memory by ~40%
+        # qtype: qfloat8              # Quantization type (default is good)
+
+        # F-Lite specific: T5 layer extraction
+        flite_text_encoder_layer: 17  # Layer 17 extraction (DO NOT CHANGE unless experimenting)
+
+        # Low VRAM mode (enable if you have <24GB VRAM)
+        # low_vram: true              # Uncomment for 20GB VRAM systems
+
+      # Sampling Configuration - Generate preview images during training
+      sample:
+        sampler: "flowmatch"          # Use flow matching sampler for F-Lite
+        sample_every: 250             # Generate samples every N steps
+        width: 1024
+        height: 1024
+
+        # Sample prompts - test your LoRA during training
+        prompts:
+          - "A highly detailed photograph in studio setting"
+          - "Portrait with dramatic lighting and sharp focus"
+          - "A photorealistic outdoor scene at golden hour"
+          - "Close-up product photography with professional lighting"
+
+        # Negative prompts (F-Lite supports these)
+        neg: "blurry, low quality, distorted"
+
+        # Sampling parameters
+        seed: 42                      # Fixed seed for consistency
+        walk_seed: true               # Vary seed across prompts
+        guidance_scale: 3.5           # F-Lite works best at 3-6 (not 7-10 like SD)
+        sample_steps: 30              # Inference steps (25-30 sufficient, 40+ for best quality)
+
+# Metadata
+meta:
+  name: "F-Lite LoRA Training - 24GB VRAM Configuration"
+  version: "1.0"
+  description: |
+    Training configuration for F-Lite 10B parameter model.
+
+    F-Lite is a copyright-safe diffusion transformer trained on licensed content.
+    This config is optimized for 24GB VRAM GPUs with quantization enabled.
+
+    Key Features:
+    - Flow matching training (like FLUX.1)
+    - T5 XXL text encoder (layer 17 extraction)
+    - Flux Schnell VAE
+    - 10B parameter DiT transformer
+
+    Requirements:
+    - Minimum 24GB VRAM (with quantization)
+    - f_lite package: pip install git+https://github.com/fal-ai/f-lite.git
+    - AI Toolkit with F-Lite support
+
+    Tips:
+    - Use descriptive, natural language prompts (not tags)
+    - F-Lite works best with detailed captions
+    - Training data should be high quality (>1MP)
+    - Guidance scale 3-6 is optimal (lower than SD)
+    - 25-30 inference steps usually sufficient
+
+    For 20GB VRAM systems:
+    - Enable low_vram: true in model config
+    - Reduce resolution to [512, 768]
+    - Increase gradient_accumulation_steps to 2-4
+
+    For 48GB+ VRAM systems:
+    - Increase batch_size to 2-4
+    - Disable quantization for faster training
+    - Increase LoRA rank to 32-64

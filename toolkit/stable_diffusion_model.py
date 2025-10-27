@@ -196,7 +196,7 @@ class StableDiffusion:
         self.config_file = None
 
         self.is_flow_matching = False
-        if self.is_flux or self.is_v3 or self.is_auraflow or self.is_lumina2 or isinstance(self.noise_scheduler, CustomFlowMatchEulerDiscreteScheduler):
+        if self.is_flux or self.is_flite or self.is_v3 or self.is_auraflow or self.is_lumina2 or isinstance(self.noise_scheduler, CustomFlowMatchEulerDiscreteScheduler):
             self.is_flow_matching = True
 
         self.quantize_device = self.device_torch
@@ -256,7 +256,11 @@ class StableDiffusion:
     @property
     def is_flux(self):
         return self.arch == 'flux'
-    
+
+    @property
+    def is_flite(self):
+        return self.arch == 'flite'
+
     @property
     def is_lumina2(self):
         return self.arch == 'lumina2'
@@ -269,9 +273,9 @@ class StableDiffusion:
         if self.vae is None:
             return 16
         divisibility = 2 ** (len(self.vae.config['block_out_channels']) - 1)
-        
-        # flux packs this again,
-        if self.is_flux or self.is_v3:
+
+        # flux packs this again, F-Lite uses the same VAE packing as FLUX
+        if self.is_flux or self.is_v3 or self.is_flite:
             divisibility = divisibility * 2
         return divisibility * 2 # todo remove this
         
@@ -828,6 +832,72 @@ class StableDiffusion:
             text_encoder[1].eval()
             pipe.transformer = pipe.transformer.to(self.device_torch)
             flush()
+
+        elif self.model_config.is_flite:
+            print("=" * 60)
+            print("Loading F-Lite Model")
+            print("=" * 60)
+
+            from toolkit.models.flite import setup_flite_for_training
+
+            try:
+                components = setup_flite_for_training(
+                    self.model_config,
+                    device=self.device_torch,
+                    dtype_str=self.dtype
+                )
+
+                tokenizer = components['tokenizer']
+                text_encoder = components['text_encoder']
+                vae = components['vae']
+                transformer = components['transformer']
+
+                # Apply quantization if enabled (recommended for 24GB VRAM)
+                if self.model_config.quantize:
+                    print("\nQuantizing F-Lite model...")
+                    from toolkit.models.flux import quantize_model
+
+                    quantize_device = self.quantize_device if self.low_vram else self.device_torch
+
+                    # Quantize the transformer
+                    quantize_model(
+                        transformer,
+                        self.model_config.qtype,
+                        device=quantize_device
+                    )
+                    print("F-Lite model quantized successfully")
+
+                # Set text encoder to eval mode (typically not trained)
+                if text_encoder is not None:
+                    text_encoder.eval()
+                    text_encoder.requires_grad_(False)
+                    print("Text encoder set to eval mode (frozen)")
+
+                # Set VAE to eval mode (not trained)
+                if vae is not None:
+                    vae.eval()
+                    vae.requires_grad_(False)
+
+                # Create pipe object for compatibility
+                pipe = type('obj', (object,), {
+                    'transformer': transformer,
+                    'text_encoder': text_encoder,
+                    'tokenizer': tokenizer,
+                    'vae': vae,
+                })()
+
+                print("\n" + "=" * 60)
+                print("F-Lite Model Loaded Successfully")
+                print("=" * 60)
+
+            except ImportError as e:
+                print(f"\nERROR: Failed to import F-Lite: {e}")
+                print("Install: pip install git+https://github.com/fal-ai/f-lite.git")
+                raise
+            except Exception as e:
+                print(f"\nERROR: Failed to load F-Lite: {e}")
+                raise
+
         elif self.model_config.is_lumina2:
             self.print_and_status_update("Loading Lumina2 model")
             # base_model_path = "black-forest-labs/FLUX.1-schnell"
